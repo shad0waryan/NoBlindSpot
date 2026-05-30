@@ -30,10 +30,6 @@ const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, standardHeade
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { message: "Too many auth attempts, please try again later." } });
 const aiLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, message: { message: "AI rate limit reached. Please wait a moment." } });
 
-app.use("/uploads", express.static(path.join(__dirname, "uploads"), {
-  maxAge: "7d",
-  etag: true,
-}));
 
 // Health check
 app.get("/api/health", (req, res) => {

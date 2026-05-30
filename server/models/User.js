@@ -28,23 +28,23 @@ const userSchema = new mongoose.Schema(
       enum: ["student", "researcher", "professional", ""],
       default: "",
     },
-    avatar: {
-      type: String,
-      default: "",
-    },
     onboarded: {
       type: Boolean,
       default: false,
     },
     preferences: {
       theme: { type: String, enum: ["dark", "light"], default: "dark" },
-      defaultView: { type: String, enum: ["list", "tree", "graph"], default: "list" },
+      defaultView: {
+        type: String,
+        enum: ["list", "tree", "graph"],
+        default: "list",
+      },
       autoSave: { type: Boolean, default: true },
       showDescriptions: { type: Boolean, default: true },
       compactMode: { type: Boolean, default: false },
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Hash password before saving

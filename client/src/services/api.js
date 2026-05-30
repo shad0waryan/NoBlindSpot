@@ -27,7 +27,7 @@ api.interceptors.response.use(
     }
 
     return Promise.reject(error);
-  }
+  },
 );
 
 // ── Auth ─────────────────────────────────────
@@ -37,19 +37,6 @@ export const authAPI = {
   getMe: () => api.get("/auth/me"),
   updateProfile: (data) => api.patch("/auth/profile", data),
   onboard: (data) => api.post("/auth/onboard", data),
-
-  uploadAvatar: (file) => {
-    const fd = new FormData();
-    fd.append("avatar", file);
-
-    return api.post("/auth/avatar", fd, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
-  },
-
-  deleteAvatar: () => api.delete("/auth/avatar"),
 };
 
 // ── Maps ─────────────────────────────────────
@@ -65,8 +52,7 @@ export const mapsAPI = {
   exportMap: (id) => api.get(`/maps/${id}/export`),
   learningPath: (id) => api.get(`/maps/${id}/learning-path`),
 
-  updateNodes: (id, nodes) =>
-    api.patch(`/maps/${id}/nodes`, { nodes }),
+  updateNodes: (id, nodes) => api.patch(`/maps/${id}/nodes`, { nodes }),
 
   saveNote: (id, nodeId, note) =>
     api.patch(`/maps/${id}/notes`, { nodeId, note }),
