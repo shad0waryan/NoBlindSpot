@@ -168,7 +168,7 @@ const Login = () => {
           </p>
         </div>
 
-        <p className="text-center text-[11px] text-slate-600 mt-6 font-body">
+        <p className="text-center text-[13px] text-slate-600 mt-6 font-body">
           {APP_CONFIG.name} v{APP_CONFIG.version} — {APP_CONFIG.tagline}
         </p>
       </div>

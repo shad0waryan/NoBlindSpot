@@ -24,28 +24,199 @@ function callAI(prompt, temperature = 0.3) {
 
 // ================= PROMPT =================
 const buildKnowledgeMapPrompt = (topic) => `
-You are an expert educator and curriculum designer. Topic: "${topic}"
+You are an expert educator, curriculum designer, researcher, software architect, and industry analyst.
+
+Topic: "${topic}"
 
 Generate a complete knowledge map.
 
 STRICT RULES:
-- EXACTLY ONE root
-- Max depth 4
-- IDs must be unique
-- parentId must exist
-- No duplicates
-- Return ONLY JSON array
 
-Format:
+* EXACTLY ONE root node
+* Maximum depth = 4
+* IDs must be globally unique
+* Every parentId must reference an existing node
+* No duplicate concepts
+* No redundant concepts
+* No unrelated or irrelevant concepts
+* Include ONLY concepts directly related to the topic
+* Maintain logical hierarchy from foundational to advanced concepts
+* Return ONLY a valid JSON array
+* Do NOT return markdown
+* Do NOT return explanations
+* Do NOT return comments
+* Do NOT return text before or after the JSON
+
+NODE FORMAT:
+
 [
-  {
-    "id": "unique-id",
-    "label": "Concept",
-    "description": "Short explanation",
-    "parentId": null,
-    "depth": 0
-  }
+{
+"id": "unique-id",
+"label": "Concept",
+"description": "Short explanation",
+"parentId": null,
+"depth": 0
+}
 ]
+
+KNOWLEDGE MAP REQUIREMENTS:
+
+1. FOUNDATION LAYER
+
+* Core fundamentals
+* Basic terminology
+* Essential principles
+* Prerequisites
+
+2. INTERMEDIATE LAYER
+
+* Practical concepts
+* Architectures
+* Components
+* Workflows
+* Applications
+
+3. ADVANCED LAYER
+
+* Optimization
+* Scaling
+* Security
+* Performance
+* Enterprise usage
+* Advanced implementations
+
+4. REAL-WORLD LAYER
+
+* Industry use cases
+* Production systems
+* Case studies
+* Best practices
+* Common challenges
+* Future trends
+
+TECHNICAL TOPICS REQUIREMENTS:
+
+If the topic is related to programming, software engineering, AI, data science, cloud, cybersecurity, databases, DevOps, web development, mobile development, or technology:
+
+Include:
+
+* Fundamentals
+* Syntax
+* Data Structures
+* Algorithms
+* Object-Oriented Programming
+* Functional Programming
+* Design Patterns
+* APIs
+* Databases
+* Testing
+* Debugging
+* Deployment
+* Monitoring
+* Security
+* Performance Optimization
+* Production Architecture
+
+LANGUAGE IMPLEMENTATIONS:
+
+When applicable create nodes for:
+
+* Python Implementation
+* JavaScript Implementation
+* TypeScript Implementation
+* Java Implementation
+* C# Implementation
+* C++ Implementation
+* Go Implementation
+* Rust Implementation
+* SQL Implementation
+
+CODE-FOCUSED REQUIREMENTS:
+
+When applicable include:
+
+* Example Implementations
+* Sample Code Concepts
+* Project Structure
+* Framework Usage
+* Library Usage
+* API Development
+* Database Integration
+* Authentication
+* Error Handling
+* Logging
+* Testing Strategies
+
+PROJECT-BASED LEARNING:
+
+When relevant include:
+
+* Beginner Project
+* Intermediate Project
+* Advanced Project
+* Enterprise Project
+* Production Deployment
+
+RESEARCH & INDUSTRY INTELLIGENCE REQUIREMENTS:
+
+Include topic-specific nodes for:
+
+* Latest Research
+* Recent Innovations
+* Industry Trends
+* Emerging Technologies
+* State-of-the-Art Techniques
+* Current Challenges
+* Open Research Problems
+* Future Directions
+
+If applicable include:
+
+* Research Papers
+* Benchmark Models
+* Industry Standards
+* RFCs
+* Whitepapers
+* Academic Foundations
+
+NEWS & MARKET AWARENESS:
+
+Include only if relevant to the topic:
+
+* Recent Developments
+* Current Industry Adoption
+* Major Breakthroughs
+* Notable Companies
+* Ecosystem Evolution
+* Regulatory Changes
+* Market Trends
+
+RELEVANCE FILTERING:
+
+VERY IMPORTANT:
+
+* Exclude generic filler concepts.
+* Exclude unrelated technologies.
+* Exclude broad concepts not directly connected to the topic.
+* Exclude duplicated ideas under different names.
+* Exclude outdated technologies unless historically important.
+* Prioritize high-signal concepts over quantity.
+* Prefer depth and relevance over breadth.
+
+QUALITY REQUIREMENTS:
+
+The generated map should allow a learner to understand:
+
+* What it is
+* How it works
+* How to build with it
+* How to scale it
+* How it is used in industry
+* Current research directions
+* Latest innovations
+* Future opportunities
+
+Return ONLY the JSON array.
 `;
 
 // ================= VALIDATION =================

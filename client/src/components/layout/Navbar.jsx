@@ -49,12 +49,12 @@ const Navbar = () => {
     <nav className="border-b border-surface-border bg-surface/60 backdrop-blur-2xl sticky top-0 z-50">
       <div className="max-w-screen mx-auto px-4 sm:px-8 lg:px-20 h-14 flex items-center justify-between">
         {/* Logo */}
-        <Link to="/dashboard" className="flex items-center gap-2.5 group">
-          <div className="relative w-8 h-8">
+        <Link to="/dashboard" className="flex items-center gap-3.5 group">
+          <div className="relative w-10 h-10">
             <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-brand-400 via-brand-500 to-violet-600 opacity-90 group-hover:opacity-100 transition-opacity duration-300" />
             <div className="absolute inset-[1.5px] rounded-[10px] bg-[#080d18] flex items-center justify-center">
               <svg
-                className="w-4 h-4 text-brand-400 group-hover:text-brand-300 transition-colors duration-300"
+                className="w-5 h-5 text-brand-400 group-hover:text-brand-300 transition-colors duration-300"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -71,13 +71,19 @@ const Navbar = () => {
             <div className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-brand-500/20 to-violet-500/10 blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           </div>
           <div className="flex items-baseline gap-0">
-            <span className="font-display font-bold text-transparent bg-clip-text bg-gradient-to-r from-brand-300 to-brand-500 text-[15px] tracking-tight">
+            <span className="font-display font-bold text-transparent bg-clip-text bg-gradient-to-r from-brand-300 to-brand-500 text-[20px] tracking-tight">
               n
             </span>
-            <span className="font-display font-bold text-white/90 text-[15px] tracking-tight group-hover:text-white transition-colors duration-200">
+            <span
+              className={`font-display font-bold text-[20px] tracking-tight transition-colors
+  ${theme === "dark" ? "text-white/90" : "text-slate-900"}`}
+            >
               B
             </span>
-            <span className="font-display font-medium text-slate-500 text-[15px] tracking-tight group-hover:text-slate-400 transition-colors duration-200">
+            <span
+              className={`font-display font-medium text-[20px] tracking-tight transition-colors
+  ${theme === "dark" ? "text-slate-500" : "text-slate-700"}`}
+            >
               S
             </span>
           </div>
@@ -85,10 +91,30 @@ const Navbar = () => {
 
         {/* Right side */}
         {user && (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-3.5">
             <button
               onClick={toggleTheme}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-surface-hover transition-all duration-200"
+              className={`
+w-10 h-10
+rounded-xl
+flex items-center justify-center
+
+bg-surface-card
+border-2 border-surface-border
+
+text-slate-400
+
+shadow-sm
+
+hover:bg-surface-hover
+hover:border-brand-500/30
+hover:text-white
+hover:scale-105
+
+active:scale-95
+
+transition-all duration-200
+`}
               title={theme === "dark" ? "Light mode" : "Dark mode"}
             >
               {theme === "dark" ? (
@@ -127,7 +153,7 @@ const Navbar = () => {
                 onClick={() => setMenuOpen(!menuOpen)}
                 className={`w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center
              bg-gradient-to-br from-brand-500 to-violet-600
-             text-[11px] font-display font-bold text-white
+             text-[13px] font-display font-bold text-white
              ring-2 ring-transparent hover:ring-brand-500/40 transition-all duration-200
              ${menuOpen ? "ring-brand-500/50" : ""}`}
                 title={user.name}
@@ -142,7 +168,7 @@ const Navbar = () => {
                       <div
                         className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center
 bg-gradient-to-br from-brand-500 to-violet-600
-text-[11px] font-display font-bold text-white
+text-[13px] font-display font-bold text-white
 ring-2 ring-transparent hover:ring-brand-500/40 transition-all duration-200"
                       >
                         {initials}
@@ -151,7 +177,7 @@ ring-2 ring-transparent hover:ring-brand-500/40 transition-all duration-200"
                         <p className="text-white text-sm font-medium truncate capitalize">
                           {user.name}
                         </p>
-                        <p className="text-slate-500 text-[11px] truncate">
+                        <p className="text-slate-500 text-[13px] truncate">
                           {user.role ? ROLE_LABELS[user.role] : user.email}
                         </p>
                       </div>

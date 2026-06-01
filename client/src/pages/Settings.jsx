@@ -252,7 +252,7 @@ const Settings = () => {
   const inputCls =
     "w-full bg-surface border border-surface-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all";
   const labelCls =
-    "text-[11px] text-slate-500 uppercase tracking-wider font-medium mb-1.5 block";
+    "text-[13px] text-slate-500 uppercase tracking-wider font-medium mb-1.5 block";
   const initials = user?.name
     ?.split(" ")
     .map((w) => w[0])
@@ -280,7 +280,7 @@ const Settings = () => {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-10 animate-slide-up">
-      <nav className="flex items-center gap-2 text-xs text-slate-500 mb-4">
+      <nav className="flex items-center gap-2 text-sm text-slate-500 mb-4">
         <Link to="/dashboard" className="hover:text-white transition-colors">
           Dashboard
         </Link>
@@ -441,7 +441,7 @@ const Settings = () => {
                     className={`relative w-16 h-7 rounded-full transition-colors duration-300 ${theme === "dark" ? "bg-brand-500" : "bg-slate-300"}`}
                   >
                     <span
-                      className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-transform duration-300 flex items-center justify-center text-[11px] ${
+                      className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-transform duration-300 flex items-center justify-center text-[13px] ${
                         theme === "dark" ? "left-0.5" : "left-[calc(100%-26px)]"
                       }`}
                     >
@@ -471,7 +471,7 @@ const Settings = () => {
                         }`}
                       >
                         <span className="block text-base mb-0.5">{v.icon}</span>
-                        <span className="text-[11px] font-medium">
+                        <span className="text-[13px] font-medium">
                           {v.label}
                         </span>
                       </button>
@@ -720,7 +720,7 @@ const Settings = () => {
                     </button>
                   </div>
 
-                  <p className="text-[11px] text-slate-600 mt-3 text-center">
+                  <p className="text-[13px] text-slate-600 mt-3 text-center">
                     Secure payments powered by Stripe. You will be redirected to
                     a secure checkout page.
                   </p>
@@ -746,7 +746,7 @@ const Settings = () => {
                     <p className="text-sm text-white font-medium">
                       Star on GitHub
                     </p>
-                    <p className="text-[11px] text-slate-500 truncate">
+                    <p className="text-[13px] text-slate-500 truncate">
                       {APP_CONFIG.github.replace("https://", "")}
                     </p>
                   </div>
@@ -776,7 +776,7 @@ const Settings = () => {
                     <p className="text-sm text-white font-medium">
                       Share with friends
                     </p>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-[13px] text-slate-500">
                       Spread the word via link, Twitter, or LinkedIn
                     </p>
                   </div>
@@ -808,7 +808,7 @@ const Settings = () => {
                     <p className="text-sm text-white font-medium">
                       Report bugs & suggest features
                     </p>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-[13px] text-slate-500">
                       Open an issue on GitHub
                     </p>
                   </div>
