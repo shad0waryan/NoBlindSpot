@@ -61,7 +61,7 @@ export const updateProfile = async (req, res, next) => {
     if (newPassword) {
       if (!currentPassword) return res.status(400).json({ message: "Current password is required" });
       const isMatch = await user.comparePassword(currentPassword);
-      if (!isMatch) return res.status(401).json({ message: "Current password is incorrect" });
+      if (!isMatch) return res.status(400).json({ message: "Current password is incorrect" });
       user.password = newPassword;
     }
 
