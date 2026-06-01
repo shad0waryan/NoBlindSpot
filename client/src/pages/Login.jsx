@@ -139,6 +139,12 @@ const Login = () => {
                     </svg>
                   )}
                 </button>
+                <Link
+                  to="/forgot-password"
+                  className="text-sm text-brand-400 hover:text-brand-300"
+                >
+                  Forgot Password?
+                </Link>
               </div>
             </div>
 

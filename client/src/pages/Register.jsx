@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Alert, Spinner } from "../components/ui";
 import { APP_CONFIG } from "../config/appConfig";
-
 const Register = () => {
   const { register } = useAuth();
   const navigate = useNavigate();
@@ -12,14 +11,48 @@ const Register = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
-
+  const [nameError, setNameError] = useState("");
+  const [emailError, setEmailError] = useState("");
   useEffect(() => {
     document.title = `Create account — ${APP_CONFIG.name}`;
   }, []);
 
-  const handleChange = (e) =>
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  const handleChange = (e) => {
+    const { name, value } = e.target;
 
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    // Name validation
+    if (name === "name") {
+      const trimmed = value.trim();
+
+      if (!/^[A-Za-z0-9_ ]*$/.test(trimmed)) {
+        setNameError(
+          "Only letters, numbers, spaces and underscores are allowed",
+        );
+      } else if (trimmed.length > 0 && trimmed.length < 4) {
+        setNameError("Name must be at least 4 characters");
+      } else if (trimmed.length > 0 && !/[A-Za-z]/.test(trimmed)) {
+        setNameError("Name must contain at least one letter");
+      } else {
+        setNameError("");
+      }
+    }
+
+    // Email validation
+    if (name === "email") {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (value.trim().length > 0 && !emailRegex.test(value.trim())) {
+        setEmailError("Please enter a valid email address");
+      } else {
+        setEmailError("");
+      }
+    }
+  };
   const pwStrength = (() => {
     const p = form.password;
     if (!p) return null;
@@ -38,15 +71,51 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     setError("");
+
+    const name = form.name.trim();
+
+    if (name.length < 4) {
+      setNameError("Name must be at least 4 characters");
+      return;
+    }
+
+    if (!/^[A-Za-z0-9_ ]+$/.test(name)) {
+      setNameError("Only letters, numbers, spaces and underscores are allowed");
+      return;
+    }
+
+    if (!/[A-Za-z]/.test(name)) {
+      setNameError("Name must contain at least one letter");
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(form.email.trim())) {
+      setEmailError("Please enter a valid email address");
+      return;
+    }
+
     if (form.password.length < 6) {
       setError("Password must be at least 6 characters");
       return;
     }
+
     setLoading(true);
+
     try {
-      await register(form.name, form.email, form.password);
-      navigate("/dashboard");
+      const response = await register(
+        form.name.trim(),
+        form.email.trim(),
+        form.password,
+      );
+      navigate("/verify-email-sent", {
+        state: {
+          email: form.email.trim(),
+        },
+      });
     } catch (err) {
       setError(
         err.response?.data?.message || "Registration failed. Please try again.",
@@ -89,29 +158,37 @@ const Register = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="label">Full Name</label>
+
               <input
                 name="name"
                 type="text"
-                className="input"
+                className={`input ${nameError ? "border-red-500" : ""}`}
                 placeholder="Jane Smith"
                 value={form.name}
                 onChange={handleChange}
                 required
                 autoComplete="name"
               />
+
+              {nameError && (
+                <p className="mt-1 text-xs text-red-500">{nameError}</p>
+              )}
             </div>
             <div>
               <label className="label">Email</label>
               <input
                 name="email"
                 type="email"
-                className="input"
+                className={`input ${emailError ? "border-red-500" : ""}`}
                 placeholder="you@example.com"
                 value={form.email}
                 onChange={handleChange}
                 required
                 autoComplete="email"
               />
+              {emailError && (
+                <p className="mt-1 text-xs text-red-500">{emailError}</p>
+              )}
             </div>
             <div>
               <label className="label">Password</label>
@@ -185,7 +262,7 @@ const Register = () => {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !!nameError || !!emailError}
               className="btn-primary w-full flex items-center justify-center gap-2 mt-2"
             >
               {loading ? (

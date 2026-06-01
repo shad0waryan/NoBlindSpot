@@ -6,6 +6,9 @@ import {
   getMe,
   updateProfile,
   completeOnboarding,
+  verifyEmail,
+  forgotPassword,
+  resetPassword
 } from "../controllers/authController.js";
 import protect from "../middleware/auth.js";
 
@@ -42,5 +45,7 @@ router.post("/login", loginValidation, login);
 router.get("/me", protect, getMe);
 router.patch("/profile", protect, profileValidation, updateProfile);
 router.post("/onboard", protect, completeOnboarding);
-
+router.get("/verify-email/:token", verifyEmail);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password/:token", resetPassword);
 export default router;
