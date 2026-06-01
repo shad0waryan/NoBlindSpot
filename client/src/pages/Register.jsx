@@ -113,11 +113,12 @@ const Register = () => {
     try {
       await register(form.name.trim(), form.email.trim(), form.password);
 
-      navigate("/verify-email-sent", {
-        state: {
-          email: form.email.trim(),
-        },
-      });
+      navigate("/dashboard");
+      // navigate("/verify-email-sent", {
+      //   state: {
+      //     email: form.email.trim(),
+      //   },
+      // });
     } catch (err) {
       setError(
         err.response?.data?.message || "Registration failed. Please try again.",
