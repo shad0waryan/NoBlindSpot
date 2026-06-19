@@ -15,7 +15,7 @@ const SORT_OPTIONS = [
 
 const SUGGESTED_TOPICS = [
   "Machine Learning",
-  "React",
+  "Reactjs",
   "Data Structures",
   "System Design",
   "Python",
@@ -29,7 +29,7 @@ const SUGGESTED_TOPICS = [
   "Operating Systems",
   "Web Security",
   "TypeScript",
-  "Next.js",
+  "Nextjs",
   "Redis",
   "PostgreSQL",
   "Rust",
