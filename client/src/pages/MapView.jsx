@@ -285,6 +285,7 @@ const MapView = () => {
   const compactMode = user?.preferences?.compactMode === true;
   const [explaining, setExplaining] = useState(null);
   const [explanations, setExplanations] = useState({});
+  const [visibleExplanations, setVisibleExplanations] = useState({});
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -337,23 +338,21 @@ const MapView = () => {
   };
 
   const handleExplain = async (node) => {
+    // already fetched — just toggle visibility, no re-fetch
     if (explanations[node.id]) {
-      setExplanations((prev) => {
-        const n = { ...prev };
-        delete n[node.id];
-        return n;
-      });
+      setVisibleExplanations((prev) => ({
+        ...prev,
+        [node.id]: !prev[node.id],
+      }));
       return;
     }
     setExplaining(node.id);
     try {
       const { data } = await mapsAPI.explain(node.label, topicMap?.topic);
       setExplanations((prev) => ({ ...prev, [node.id]: data.explanation }));
+      setVisibleExplanations((prev) => ({ ...prev, [node.id]: true }));
     } catch {
-      setExplanations((prev) => ({
-        ...prev,
-        [node.id]: "Failed to load explanation.",
-      }));
+      toast("Failed to load explanation", { type: "error" });
     } finally {
       setExplaining(null);
     }
@@ -1960,9 +1959,27 @@ const MapView = () => {
                         </span>
                       </button>
                       <div className="min-w-0 flex-1">
-                        <h3 className="text-white font-medium text-sm leading-snug">
-                          {node.label}
-                        </h3>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-white font-medium text-sm leading-snug">
+                            {node.label}
+                          </h3>
+                          <button
+                            onClick={() => handleExplain(node)}
+                            disabled={explaining === node.id}
+                            className={`shrink-0 px-2 py-0.5 text-[11px] rounded-md border transition-all font-medium flex items-center gap-1 ${visibleExplanations[node.id] ? "border-brand-500 text-brand-400 bg-brand-500/10" : "border-sky-500/30 text-sky-400 hover:border-sky-500/100 hover:bg-sky-500/20"} disabled:opacity-50 disabled:cursor-wait`}
+                          >
+                            {explaining === node.id ? (
+                              <>
+                                <span className="w-2.5 h-2.5 border-[1.5px] border-sky-400 border-t-transparent rounded-full animate-spin" />
+                                ...
+                              </>
+                            ) : visibleExplanations[node.id] ? (
+                              "Hide"
+                            ) : (
+                              "Explain"
+                            )}
+                          </button>
+                        </div>
                         {showDescriptions && node.description && (
                           <p className="text-[13px] text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">
                             {node.description}
@@ -1997,7 +2014,7 @@ const MapView = () => {
                   </div>
 
                   <div
-                    className={`flex items-center gap-1.5 flex-wrap ${compactMode ? "mt-1.5" : "mt-3"}`}
+                    className={`flex items-center gap-1.5 flex-wrap ml-7 ${compactMode ? "mt-1.5" : "mt-3"}`}
                   >
                     {STATUSES.map((s) => (
                       <button
@@ -2023,31 +2040,15 @@ const MapView = () => {
                     >
                       {nodeNote ? "✎ Note" : "+ Note"}
                     </button>
-                    <button
-                      onClick={() => handleExplain(node)}
-                      disabled={explaining === node.id}
-                      className={`px-2 py-0.5 text-[12px] rounded-lg border transition-all font-medium flex items-center gap-1 ${explanations[node.id] ? "border-brand-500 text-brand-400 bg-brand-500/10" : "border-sky-500/30 text-sky-400 hover:border-sky-500/100 hover:bg-sky-500/20"} disabled:opacity-50 disabled:cursor-wait`}
-                    >
-                      {explaining === node.id ? (
-                        <>
-                          <span className="w-2.5 h-2.5 border-[1.5px] border-sky-400 border-t-transparent rounded-full animate-spin" />
-                          ...
-                        </>
-                      ) : explanations[node.id] ? (
-                        "Hide"
-                      ) : (
-                        "Explain"
-                      )}
-                    </button>
                   </div>
 
-                  {nodeNote && !explanations[node.id] && (
-                    <div className="mt-2.5 px-3 py-2 rounded-xl bg-amber-500/5 border border-amber-500/10 text-[13px] text-amber-300/70 italic leading-relaxed">
+                  {nodeNote && !visibleExplanations[node.id] && (
+                    <div className="mt-2.5 ml-7 px-3 py-2 rounded-xl bg-amber-500/5 border border-amber-500/10 text-[13px] text-amber-300/70 italic leading-relaxed">
                       {nodeNote}
                     </div>
                   )}
-                  {explanations[node.id] && (
-                    <div className="mt-2.5 p-3 rounded-xl bg-sky-500/5 border border-sky-500/15 text-sm text-slate-400 leading-relaxed whitespace-pre-line">
+                  {visibleExplanations[node.id] && explanations[node.id] && (
+                    <div className="mt-2.5 ml-7 p-3 rounded-xl bg-sky-500/5 border border-sky-500/15 text-sm text-slate-400 leading-relaxed whitespace-pre-line">
                       {explanations[node.id]}
                     </div>
                   )}

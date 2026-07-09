@@ -18,242 +18,160 @@ function callAI(prompt, temperature = 0.3, maxTokens = 2000) {
       messages: [{ role: "user", content: prompt }],
       temperature,
       max_tokens: maxTokens,
+      // reasoning models can burn the whole token budget "thinking" and
+      // return null content; ask them not to (ignored where unsupported)
+      reasoning: { enabled: false },
     },
-    { headers: AI_HEADERS },
+    { headers: AI_HEADERS, timeout: 90000 },
   );
 }
 
-// Extract a JSON array from a raw AI response, tolerating markdown fences
-// or stray text around the array.
-function extractJSONArray(rawText) {
-  try {
-    return JSON.parse(rawText);
-  } catch {
-    const match = rawText.match(/\[[\s\S]*\]/);
-    if (!match) return null;
-    try {
-      return JSON.parse(match[0]);
-    } catch {
-      return null;
-    }
-  }
+// Pulls the message text out of an OpenRouter response, tolerating
+// providers that return null/empty content (filtered, empty, or errored
+// generations) instead of throwing.
+function extractMessageText(response) {
+  const content = response.data?.choices?.[0]?.message?.content;
+  return typeof content === "string" ? content.trim() : "";
 }
 
-// Calls the AI expecting a JSON array back. If parsing fails, makes one
-// repair attempt asking the model to fix its own malformed output before
-// giving up — this is what most "AI parse failed" errors used to be.
-async function callAIForArray(prompt, { temperature = 0.3, maxTokens = 2000 } = {}) {
-  const response = await callAI(prompt, temperature, maxTokens);
-  const rawText = response.data.choices[0].message.content.trim();
-  let parsed = extractJSONArray(rawText);
-  if (parsed) return parsed;
+// Extract a JSON array from a raw AI response. Tolerates markdown fences,
+// stray text around the array, `{"nodes": [...]}` wrappers, and output
+// truncated mid-array (salvages up to the last complete object).
+function extractJSONArray(rawText) {
+  if (!rawText) return null;
+  const text = rawText.replace(/```(?:json)?/gi, "").trim();
 
-  const repairPrompt = `The text below was supposed to be a valid JSON array but is malformed or incomplete. Fix it and return ONLY the corrected, complete, valid JSON array — no markdown, no explanations, no text before or after.
+  try {
+    const v = JSON.parse(text);
+    if (Array.isArray(v)) return v;
+    // some models wrap the array in an object despite instructions
+    if (v && typeof v === "object") {
+      const arr = Object.values(v).find((x) => Array.isArray(x));
+      if (arr) return arr;
+    }
+    return null;
+  } catch {
+    // fall through to bracket extraction
+  }
 
-${rawText}`;
-  const repairResponse = await callAI(repairPrompt, 0.1, maxTokens);
-  const repairText = repairResponse.data.choices[0].message.content.trim();
-  return extractJSONArray(repairText);
+  const start = text.indexOf("[");
+  if (start === -1) return null;
+
+  const end = text.lastIndexOf("]");
+  if (end > start) {
+    try {
+      const v = JSON.parse(text.slice(start, end + 1));
+      if (Array.isArray(v)) return v;
+    } catch {
+      // fall through to truncation salvage
+    }
+  }
+
+  // truncated mid-array: cut back to the last complete object and close
+  const lastObj = text.lastIndexOf("}");
+  if (lastObj > start) {
+    try {
+      const v = JSON.parse(text.slice(start, lastObj + 1) + "]");
+      if (Array.isArray(v)) return v;
+    } catch {
+      // give up
+    }
+  }
+  return null;
+}
+
+// Calls the AI expecting a non-empty JSON array back, retrying with fresh
+// generations on failure. "openrouter/free" routes each request to a
+// different free model of varying quality, so a retry usually lands on a
+// model that produces valid output even when the previous one didn't.
+// An optional `validate` callback rejects arrays that parse but don't have
+// the required shape, so bad output triggers a retry instead of a 500.
+async function callAIForArray(
+  prompt,
+  { temperature = 0.3, maxTokens = 2000, attempts = 3, validate } = {},
+) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const response = await callAI(prompt, temperature, maxTokens);
+      const rawText = extractMessageText(response);
+      const parsed = extractJSONArray(rawText);
+      if (
+        Array.isArray(parsed) &&
+        parsed.length > 0 &&
+        (!validate || validate(parsed))
+      ) {
+        return parsed;
+      }
+      console.warn(
+        `AI attempt ${i}/${attempts} produced unusable output (model: ${response.data?.model}, finish: ${response.data?.choices?.[0]?.finish_reason}, length: ${rawText.length})`,
+      );
+    } catch (err) {
+      console.warn(`AI attempt ${i}/${attempts} request failed: ${err.message}`);
+    }
+  }
+  return null;
 }
 
 // ================= PROMPT =================
 const buildKnowledgeMapPrompt = (topic) => `
-You are an expert educator, curriculum designer, researcher, software architect, and industry analyst.
+You are an expert educator and curriculum designer who can map ANY subject — academic, technical, creative, historical, scientific, practical, professional, cultural, or hobby.
 
 Topic: "${topic}"
 
-Generate a complete knowledge map.
+Generate a complete knowledge map: a hierarchy of the concepts a learner must understand to master this topic, ordered from foundational to advanced.
 
-STRICT RULES:
-
-* EXACTLY ONE root node
-* Maximum depth = 4
-* IDs must be globally unique
-* Every parentId must reference an existing node
-* No duplicate concepts
-* No redundant concepts
-* No unrelated or irrelevant concepts
-* Include ONLY concepts directly related to the topic
-* Maintain logical hierarchy from foundational to advanced concepts
-* Return ONLY a valid JSON array
-* Do NOT return markdown
-* Do NOT return explanations
-* Do NOT return comments
-* Do NOT return text before or after the JSON
-
-NODE FORMAT:
+OUTPUT FORMAT — a JSON array of nodes:
 
 [
 {
 "id": "unique-id",
 "label": "Concept",
-"description": "Short explanation",
+"description": "Short explanation (one sentence)",
 "parentId": null,
 "depth": 0
 }
 ]
 
-KNOWLEDGE MAP REQUIREMENTS:
+STRICT RULES:
 
-1. FOUNDATION LAYER
+* EXACTLY ONE root node (parentId: null) — the topic itself
+* 25 to 45 nodes total
+* Maximum depth = 4
+* IDs must be unique; every parentId must reference an existing node's id
+* No duplicate or redundant concepts; include ONLY concepts directly relevant to this topic
+* Return ONLY the valid JSON array — no markdown, no comments, no text before or after
 
-* Core fundamentals
-* Basic terminology
-* Essential principles
-* Prerequisites
+STRUCTURE — organize the map into layers, adapting each to whatever kind of topic this is:
 
-2. INTERMEDIATE LAYER
+1. FOUNDATIONS — core ideas, essential terminology, key principles, prerequisites, origins or background
+2. CORE KNOWLEDGE — the main concepts, methods, techniques, components, processes, or events that make up the subject
+3. ADVANCED — deeper mastery: advanced techniques, nuances, specializations, expert-level themes, or complex applications
+4. REAL WORLD — how the subject shows up in practice today: applications, notable examples or figures, common challenges, best practices, and current developments or trends
 
-* Practical concepts
-* Architectures
-* Components
-* Workflows
-* Applications
+ADAPT TO THE DOMAIN — use whatever concept types fit the subject:
 
-3. ADVANCED LAYER
+* Technical/scientific topics: theory, tools, methods, implementation, testing, current research
+* Historical/cultural topics: periods, causes, key events, figures, consequences, legacy, interpretations
+* Creative/artistic topics: fundamentals, techniques, styles, materials/tools, influential works and artists, developing your own practice
+* Practical/skill topics: basics, progressions, common mistakes, equipment, routines, mastery milestones
+* Business/professional topics: core concepts, frameworks, processes, strategy, case examples, industry landscape
 
-* Optimization
-* Scaling
-* Security
-* Performance
-* Enterprise usage
-* Advanced implementations
-
-4. REAL-WORLD LAYER
-
-* Industry use cases
-* Production systems
-* Case studies
-* Best practices
-* Common challenges
-* Future trends
-
-TECHNICAL TOPICS REQUIREMENTS:
-
-If the topic is related to programming, software engineering, AI, data science, cloud, cybersecurity, databases, DevOps, web development, mobile development, or technology:
-
-Include:
-
-* Fundamentals
-* Syntax
-* Data Structures
-* Algorithms
-* Object-Oriented Programming
-* Functional Programming
-* Design Patterns
-* APIs
-* Databases
-* Testing
-* Debugging
-* Deployment
-* Monitoring
-* Security
-* Performance Optimization
-* Production Architecture
-
-LANGUAGE IMPLEMENTATIONS:
-
-When applicable create nodes for:
-
-* Python Implementation
-* JavaScript Implementation
-* TypeScript Implementation
-* Java Implementation
-* C# Implementation
-* C++ Implementation
-* Go Implementation
-* Rust Implementation
-* SQL Implementation
-
-CODE-FOCUSED REQUIREMENTS:
-
-When applicable include:
-
-* Example Implementations
-* Sample Code Concepts
-* Project Structure
-* Framework Usage
-* Library Usage
-* API Development
-* Database Integration
-* Authentication
-* Error Handling
-* Logging
-* Testing Strategies
-
-PROJECT-BASED LEARNING:
-
-When relevant include:
-
-* Beginner Project
-* Intermediate Project
-* Advanced Project
-* Enterprise Project
-* Production Deployment
-
-RESEARCH & INDUSTRY INTELLIGENCE REQUIREMENTS:
-
-Include topic-specific nodes for:
-
-* Latest Research
-* Recent Innovations
-* Industry Trends
-* Emerging Technologies
-* State-of-the-Art Techniques
-* Current Challenges
-* Open Research Problems
-* Future Directions
-
-If applicable include:
-
-* Research Papers
-* Benchmark Models
-* Industry Standards
-* RFCs
-* Whitepapers
-* Academic Foundations
-
-NEWS & MARKET AWARENESS:
-
-Include only if relevant to the topic:
-
-* Recent Developments
-* Current Industry Adoption
-* Major Breakthroughs
-* Notable Companies
-* Ecosystem Evolution
-* Regulatory Changes
-* Market Trends
-
-RELEVANCE FILTERING:
-
-VERY IMPORTANT:
-
-* Exclude generic filler concepts.
-* Exclude unrelated technologies.
-* Exclude broad concepts not directly connected to the topic.
-* Exclude duplicated ideas under different names.
-* Exclude outdated technologies unless historically important.
-* Prioritize high-signal concepts over quantity.
-* Prefer depth and relevance over breadth.
-
-QUALITY REQUIREMENTS:
-
-The generated map should allow a learner to understand:
-
-* What it is
-* How it works
-* How to build with it
-* How to scale it
-* How it is used in industry
-* Current research directions
-* Latest innovations
-* Future opportunities
+QUALITY BAR: a learner following this map top to bottom should go from "never heard of it" to understanding what it is, how it works, how to engage with or apply it, and where it's headed. Prioritize high-signal concepts over quantity — no generic filler.
 
 Return ONLY the JSON array.
 `;
 
 // ================= VALIDATION =================
+function sanitizeNodes(nodes) {
+  return nodes.map((node) => ({
+    id: node.id || uuidv4(),
+    label: node.label || "Unnamed",
+    description: node.description || "",
+    parentId: node.parentId ?? null,
+    depth: node.depth ?? 0,
+  }));
+}
+
 function validateTree(nodes) {
   const ids = new Set();
   const parentIds = new Set();
@@ -270,6 +188,15 @@ function validateTree(nodes) {
 
   const roots = nodes.filter((n) => n.parentId === null);
   if (roots.length !== 1) throw new Error("Must have exactly one root");
+}
+
+function isValidTree(nodes) {
+  try {
+    validateTree(sanitizeNodes(nodes));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ================= GENERATE =================
@@ -314,27 +241,18 @@ export const generateMap = async (req, res, next) => {
     const nodes = await callAIForArray(buildKnowledgeMapPrompt(normalizedTopic), {
       temperature: 0.3,
       maxTokens: 4000,
+      attempts: 3,
+      validate: isValidTree,
     });
 
     if (!nodes) {
-      return res
-        .status(500)
-        .json({ message: "AI parse failed. Please try again." });
+      return res.status(502).json({
+        message:
+          "The AI couldn't generate a valid map right now. Please try again.",
+      });
     }
 
-    if (!Array.isArray(nodes) || nodes.length === 0) {
-      return res.status(500).json({ message: "AI returned empty map" });
-    }
-
-    const sanitizedNodes = nodes.map((node) => ({
-      id: node.id || uuidv4(),
-      label: node.label || "Unnamed",
-      description: node.description || "",
-      parentId: node.parentId ?? null,
-      depth: node.depth ?? 0,
-    }));
-
-    validateTree(sanitizedNodes);
+    const sanitizedNodes = sanitizeNodes(nodes);
 
     try {
       topicMap = await TopicMap.create({
@@ -455,8 +373,20 @@ RULES:
 - Do NOT use markdown headers or bullet lists — write in plain flowing paragraphs
 - Return ONLY the explanation text, nothing else`;
 
-    const response = await callAI(prompt, 0.4);
-    const explanation = response.data.choices[0].message.content.trim();
+    let explanation = "";
+    for (let i = 0; i < 2 && !explanation; i++) {
+      try {
+        const response = await callAI(prompt, 0.4);
+        explanation = extractMessageText(response);
+      } catch (err) {
+        console.warn(`Explain attempt ${i + 1} failed: ${err.message}`);
+      }
+    }
+    if (!explanation) {
+      return res
+        .status(502)
+        .json({ message: "AI returned no explanation. Please try again." });
+    }
     res.json({ explanation });
   } catch (err) {
     next(err);
@@ -498,16 +428,24 @@ Format:
     const questions = await callAIForArray(prompt, {
       temperature: 0.5,
       maxTokens: 1500,
+      attempts: 3,
+      validate: (arr) =>
+        arr.every(
+          (q) =>
+            typeof q.question === "string" &&
+            Array.isArray(q.options) &&
+            q.options.length === 4 &&
+            Number.isInteger(q.correct) &&
+            q.correct >= 0 &&
+            q.correct < 4,
+        ),
     });
 
     if (!questions) {
-      return res
-        .status(500)
-        .json({ message: "Quiz parse failed. Please try again." });
-    }
-
-    if (!Array.isArray(questions) || questions.length === 0) {
-      return res.status(500).json({ message: "AI returned empty quiz" });
+      return res.status(502).json({
+        message:
+          "The AI couldn't generate a valid quiz right now. Please try again.",
+      });
     }
 
     res.json({ questions });
@@ -557,12 +495,15 @@ Format:
     const path = await callAIForArray(prompt, {
       temperature: 0.3,
       maxTokens: 1500,
+      attempts: 3,
+      validate: (arr) => arr.every((s) => typeof s.label === "string"),
     });
 
     if (!path) {
-      return res
-        .status(500)
-        .json({ message: "Path parse failed. Please try again." });
+      return res.status(502).json({
+        message:
+          "The AI couldn't generate a valid path right now. Please try again.",
+      });
     }
 
     res.json({ path });

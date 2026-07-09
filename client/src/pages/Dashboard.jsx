@@ -656,7 +656,7 @@ const Dashboard = () => {
                   onClick={() => navigate(`/map/${map.topicMap._id}`)}
                 >
                   {isRecent && (
-                    <div className="absolute top-3 left-3">
+                    <div className="absolute top-3 right-11">
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-brand-500/15 text-brand-400 border border-brand-500/20 font-medium">
                         Recent
                       </span>
@@ -677,9 +677,7 @@ const Dashboard = () => {
                     ✕
                   </button>
 
-                  <div
-                    className={`flex items-start gap-3.5 ${isRecent ? "mt-5" : ""}`}
-                  >
+                  <div className="flex items-start gap-3.5">
                     <ProgressRing
                       known={map.stats?.known || 0}
                       partial={map.stats?.partial || 0}
