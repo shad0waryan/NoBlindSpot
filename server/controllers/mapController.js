@@ -10,16 +10,50 @@ const AI_HEADERS = {
   "Content-Type": "application/json",
 };
 
-function callAI(prompt, temperature = 0.3) {
+function callAI(prompt, temperature = 0.3, maxTokens = 2000) {
   return axios.post(
     AI_URL,
     {
       model: "openrouter/free",
       messages: [{ role: "user", content: prompt }],
       temperature,
+      max_tokens: maxTokens,
     },
     { headers: AI_HEADERS },
   );
+}
+
+// Extract a JSON array from a raw AI response, tolerating markdown fences
+// or stray text around the array.
+function extractJSONArray(rawText) {
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    const match = rawText.match(/\[[\s\S]*\]/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
+  }
+}
+
+// Calls the AI expecting a JSON array back. If parsing fails, makes one
+// repair attempt asking the model to fix its own malformed output before
+// giving up — this is what most "AI parse failed" errors used to be.
+async function callAIForArray(prompt, { temperature = 0.3, maxTokens = 2000 } = {}) {
+  const response = await callAI(prompt, temperature, maxTokens);
+  const rawText = response.data.choices[0].message.content.trim();
+  let parsed = extractJSONArray(rawText);
+  if (parsed) return parsed;
+
+  const repairPrompt = `The text below was supposed to be a valid JSON array but is malformed or incomplete. Fix it and return ONLY the corrected, complete, valid JSON array — no markdown, no explanations, no text before or after.
+
+${rawText}`;
+  const repairResponse = await callAI(repairPrompt, 0.1, maxTokens);
+  const repairText = repairResponse.data.choices[0].message.content.trim();
+  return extractJSONArray(repairText);
 }
 
 // ================= PROMPT =================
@@ -277,16 +311,15 @@ export const generateMap = async (req, res, next) => {
       return res.json({ topicMap, progress, cached: true });
     }
 
-    const response = await callAI(buildKnowledgeMapPrompt(normalizedTopic));
-    const rawText = response.data.choices[0].message.content.trim();
+    const nodes = await callAIForArray(buildKnowledgeMapPrompt(normalizedTopic), {
+      temperature: 0.3,
+      maxTokens: 4000,
+    });
 
-    let nodes;
-    try {
-      nodes = JSON.parse(rawText);
-    } catch {
-      const match = rawText.match(/\[[\s\S]*\]/);
-      if (!match) return res.status(500).json({ message: "AI parse failed" });
-      nodes = JSON.parse(match[0]);
+    if (!nodes) {
+      return res
+        .status(500)
+        .json({ message: "AI parse failed. Please try again." });
     }
 
     if (!Array.isArray(nodes) || nodes.length === 0) {
@@ -462,16 +495,15 @@ Format:
   }
 ]`;
 
-    const response = await callAI(prompt, 0.5);
-    const rawText = response.data.choices[0].message.content.trim();
+    const questions = await callAIForArray(prompt, {
+      temperature: 0.5,
+      maxTokens: 1500,
+    });
 
-    let questions;
-    try {
-      questions = JSON.parse(rawText);
-    } catch {
-      const match = rawText.match(/\[[\s\S]*\]/);
-      if (!match) return res.status(500).json({ message: "Quiz parse failed" });
-      questions = JSON.parse(match[0]);
+    if (!questions) {
+      return res
+        .status(500)
+        .json({ message: "Quiz parse failed. Please try again." });
     }
 
     if (!Array.isArray(questions) || questions.length === 0) {
@@ -522,16 +554,15 @@ Format:
   { "label": "Concept Name", "reason": "Foundation for everything else" }
 ]`;
 
-    const response = await callAI(prompt, 0.3);
-    const rawText = response.data.choices[0].message.content.trim();
+    const path = await callAIForArray(prompt, {
+      temperature: 0.3,
+      maxTokens: 1500,
+    });
 
-    let path;
-    try {
-      path = JSON.parse(rawText);
-    } catch {
-      const match = rawText.match(/\[[\s\S]*\]/);
-      if (!match) return res.status(500).json({ message: "Path parse failed" });
-      path = JSON.parse(match[0]);
+    if (!path) {
+      return res
+        .status(500)
+        .json({ message: "Path parse failed. Please try again." });
     }
 
     res.json({ path });

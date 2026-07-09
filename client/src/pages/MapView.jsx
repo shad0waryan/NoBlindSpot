@@ -281,6 +281,8 @@ const MapView = () => {
   const [viewMode, setViewMode] = useState(
     user?.preferences?.defaultView || "list",
   );
+  const showDescriptions = user?.preferences?.showDescriptions !== false;
+  const compactMode = user?.preferences?.compactMode === true;
   const [explaining, setExplaining] = useState(null);
   const [explanations, setExplanations] = useState({});
 
@@ -305,8 +307,11 @@ const MapView = () => {
   const [flashDeck, setFlashDeck] = useState([]);
 
   const [timerRunning, setTimerRunning] = useState(false);
-  const [timerSeconds, setTimerSeconds] = useState(
+  const [focusSecondsLeft, setFocusSecondsLeft] = useState(
     () => getLastTimer().focusMin * 60,
+  );
+  const [breakSecondsLeft, setBreakSecondsLeft] = useState(
+    () => getLastTimer().breakMin * 60,
   );
   const [timerMode, setTimerMode] = useState("focus");
   const [timerPreset, setTimerPreset] = useState(() => getLastTimer().presetId);
@@ -518,15 +523,17 @@ const MapView = () => {
 
   const focusDuration = customFocus * 60;
   const breakDuration = customBreak * 60;
+  const timerSeconds = timerMode === "focus" ? focusSecondsLeft : breakSecondsLeft;
 
   useEffect(() => {
     if (!timerRunning) return;
+    const setActiveSeconds =
+      timerMode === "focus" ? setFocusSecondsLeft : setBreakSecondsLeft;
     const interval = setInterval(() => {
-      setTimerSeconds((prev) => {
+      setActiveSeconds((prev) => {
         if (prev <= 1) {
           setTimerRunning(false);
           const nextMode = timerMode === "focus" ? "break" : "focus";
-          const nextDur = nextMode === "focus" ? focusDuration : breakDuration;
           setTimerMode(nextMode);
           toast(
             timerMode === "focus"
@@ -534,7 +541,8 @@ const MapView = () => {
               : "Break over! Time to focus.",
             { type: "success", duration: 4000 },
           );
-          return nextDur;
+          // reset the mode that just finished so its next run starts fresh
+          return timerMode === "focus" ? focusDuration : breakDuration;
         }
         return prev - 1;
       });
@@ -548,9 +556,8 @@ const MapView = () => {
     setTimerPreset(preset.id);
     setCustomFocus(preset.focus);
     setCustomBreak(preset.break);
-    setTimerSeconds(
-      timerMode === "focus" ? preset.focus * 60 : preset.break * 60,
-    );
+    setFocusSecondsLeft(preset.focus * 60);
+    setBreakSecondsLeft(preset.break * 60);
     setTimerRunning(false);
     saveLastTimer({
       presetId: preset.id,
@@ -565,7 +572,8 @@ const MapView = () => {
     setCustomFocus(fm);
     setCustomBreak(bm);
     setTimerPreset("custom");
-    setTimerSeconds(timerMode === "focus" ? fm * 60 : bm * 60);
+    setFocusSecondsLeft(fm * 60);
+    setBreakSecondsLeft(bm * 60);
     setTimerRunning(false);
     saveLastTimer({ presetId: "custom", focusMin: fm, breakMin: bm });
   };
@@ -710,7 +718,7 @@ const MapView = () => {
         return (
           <div key={node.id} className="animate-view-in">
             <div
-              className={`group flex items-start gap-2.5 p-3 rounded-xl mb-1.5 transition-all duration-200 hover:bg-surface-hover/50 border-l-2 ${leftBorder} ${matchesSearch ? "bg-brand-500/5" : ""}`}
+              className={`group flex items-start gap-2.5 rounded-xl transition-all duration-200 hover:bg-surface-hover/50 border-l-2 ${compactMode ? "p-1.5 mb-0.5" : "p-3 mb-1.5"} ${leftBorder} ${matchesSearch ? "bg-brand-500/5" : ""}`}
               style={{ marginLeft: `${depth * 20}px` }}
             >
               {hasChildren ? (
@@ -758,7 +766,7 @@ const MapView = () => {
                 <span className="text-white font-medium text-sm">
                   {node.label}
                 </span>
-                {node.description && (
+                {showDescriptions && node.description && (
                   <p className="text-[13px] text-slate-400 mt-0.5 line-clamp-1">
                     {node.description}
                   </p>
@@ -1756,9 +1764,8 @@ const MapView = () => {
                 <button
                   onClick={() => {
                     setTimerRunning(false);
-                    setTimerSeconds(
-                      timerMode === "focus" ? focusDuration : breakDuration,
-                    );
+                    if (timerMode === "focus") setFocusSecondsLeft(focusDuration);
+                    else setBreakSecondsLeft(breakDuration);
                   }}
                   className="px-4 py-2 rounded-xl text-sm border border-slate-700 text-slate-400 hover:border-slate-500 transition-all font-medium"
                 >
@@ -1766,11 +1773,7 @@ const MapView = () => {
                 </button>
                 <button
                   onClick={() => {
-                    const next = timerMode === "focus" ? "break" : "focus";
-                    setTimerMode(next);
-                    setTimerSeconds(
-                      next === "focus" ? focusDuration : breakDuration,
-                    );
+                    setTimerMode((m) => (m === "focus" ? "break" : "focus"));
                     setTimerRunning(false);
                   }}
                   className="px-4 py-2 rounded-xl text-sm border border-slate-700 text-slate-400 hover:border-slate-500 transition-all font-medium"
@@ -1903,7 +1906,9 @@ const MapView = () => {
         className="animate-view-in flex-1 flex flex-col min-h-0"
       >
         {viewMode === "list" && (
-          <div className="space-y-2.5 overflow-y-auto pr-1">
+          <div
+            className={`overflow-y-auto pr-1 ${compactMode ? "space-y-1" : "space-y-2.5"}`}
+          >
             {!filteredNodes.length && (
               <div className="text-center py-16 space-y-2 animate-fade-in">
                 <p className="text-slate-400 text-sm">
@@ -1932,7 +1937,7 @@ const MapView = () => {
               return (
                 <div
                   key={node.id}
-                  className={`p-4 rounded-2xl border transition-all duration-200 hover:shadow-lg hover:translate-y-[-1px] animate-slide-up opacity-0 ${sc.border} ${sc.bg}`}
+                  className={`rounded-2xl border transition-all duration-200 hover:shadow-lg hover:translate-y-[-1px] animate-slide-up opacity-0 ${compactMode ? "p-2.5" : "p-4"} ${sc.border} ${sc.bg}`}
                   style={{ animationDelay: `${Math.min(idx * 0.03, 0.3)}s` }}
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -1958,7 +1963,7 @@ const MapView = () => {
                         <h3 className="text-white font-medium text-sm leading-snug">
                           {node.label}
                         </h3>
-                        {node.description && (
+                        {showDescriptions && node.description && (
                           <p className="text-[13px] text-slate-400 mt-0.5 line-clamp-2 leading-relaxed">
                             {node.description}
                           </p>
@@ -1991,7 +1996,9 @@ const MapView = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+                  <div
+                    className={`flex items-center gap-1.5 flex-wrap ${compactMode ? "mt-1.5" : "mt-3"}`}
+                  >
                     {STATUSES.map((s) => (
                       <button
                         key={s}
