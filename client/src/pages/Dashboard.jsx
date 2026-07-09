@@ -91,8 +91,12 @@ const Dashboard = () => {
   const searchRef = useRef(null);
 
   const [maps, setMaps] = useState([]);
+  const [mapsPage, setMapsPage] = useState(1);
+  const [mapsHasMore, setMapsHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [genElapsed, setGenElapsed] = useState(0);
   const [topic, setTopic] = useState("");
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -100,16 +104,26 @@ const Dashboard = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  const fetchMaps = async () => {
+  // Fetches page 1 fresh (used on mount and window focus) unless `append`
+  // is set, in which case it's a "Load more" continuing from `page`.
+  const fetchMaps = async (page = 1, append = false) => {
     try {
-      const { data } = await mapsAPI.getAll();
-      setMaps(data.progress || []);
+      if (append) setLoadingMore(true);
+      const { data } = await mapsAPI.getAll(page, 30);
+      setMaps((prev) =>
+        append ? [...prev, ...(data.progress || [])] : data.progress || [],
+      );
+      setMapsPage(data.page || page);
+      setMapsHasMore(!!data.hasMore);
     } catch {
       setError("Failed to load your maps.");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
+
+  const loadMoreMaps = () => fetchMaps(mapsPage + 1, true);
 
   useEffect(() => {
     document.title = `Dashboard — ${APP_CONFIG.name}`;
@@ -130,6 +144,18 @@ const Dashboard = () => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
+
+  // Free-tier AI generations can take anywhere from a few seconds to ~2
+  // minutes depending on which model gets picked — surface elapsed time so
+  // the wait doesn't feel broken.
+  useEffect(() => {
+    if (!generating) {
+      setGenElapsed(0);
+      return;
+    }
+    const interval = setInterval(() => setGenElapsed((s) => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, [generating]);
 
   const handleGenerate = async (e) => {
     e.preventDefault();
@@ -470,7 +496,8 @@ const Dashboard = () => {
                   <span className="animate-pulse">
                     {topic.trim()
                       ? `Mapping "${topic.trim()}"...`
-                      : "Generating..."}
+                      : "Generating..."}{" "}
+                    {genElapsed > 0 && `${genElapsed}s`}
                   </span>
                 </>
               ) : (
@@ -493,6 +520,13 @@ const Dashboard = () => {
               )}
             </button>
           </form>
+
+          {generating && genElapsed >= 8 && (
+            <p className="text-xs text-slate-500 mt-2.5 animate-fade-in">
+              Free AI models can take up to a couple of minutes depending on
+              load — hang tight, it's still working.
+            </p>
+          )}
 
           {!topic.trim() && !generating && (
             <div
@@ -746,6 +780,19 @@ const Dashboard = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {!loading && !search.trim() && mapsHasMore && (
+          <div className="flex justify-center mt-5">
+            <button
+              onClick={loadMoreMaps}
+              disabled={loadingMore}
+              className="px-5 py-2 rounded-xl text-sm border border-surface-border text-slate-400 hover:border-slate-500 hover:text-white transition-all font-medium disabled:opacity-50 flex items-center gap-2"
+            >
+              {loadingMore && <Spinner size="sm" />}
+              {loadingMore ? "Loading..." : "Load more"}
+            </button>
           </div>
         )}
       </div>

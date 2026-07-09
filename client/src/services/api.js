@@ -47,7 +47,8 @@ export const mapsAPI = {
   quiz: (concepts, parentTopic) =>
     api.post("/maps/quiz", { concepts, parentTopic }),
 
-  getAll: () => api.get("/maps"),
+  getAll: (page = 1, limit = 30) =>
+    api.get("/maps", { params: { page, limit } }),
   getById: (id) => api.get(`/maps/${id}`),
   exportMap: (id) => api.get(`/maps/${id}/export`),
   learningPath: (id) => api.get(`/maps/${id}/learning-path`),

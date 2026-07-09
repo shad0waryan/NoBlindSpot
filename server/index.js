@@ -47,6 +47,7 @@ app.use("/api/auth/register", authLimiter);
 app.use("/api/maps/generate", aiLimiter);
 app.use("/api/maps/explain", aiLimiter);
 app.use("/api/maps/quiz", aiLimiter);
+app.use(/^\/api\/maps\/[^/]+\/learning-path$/, aiLimiter);
 app.use("/api", apiLimiter);
 
 app.use("/api/auth", authRoutes);

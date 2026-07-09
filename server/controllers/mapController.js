@@ -80,17 +80,50 @@ function extractJSONArray(rawText) {
   return null;
 }
 
+// Resolves with the first truthy value among `promises`, without waiting
+// for the rest once one lands — unlike Promise.all/allSettled, which always
+// wait for the slowest. Resolves null only once every promise has settled
+// and none produced a truthy value.
+function firstTruthy(promises) {
+  return new Promise((resolve) => {
+    let remaining = promises.length;
+    let done = false;
+    promises.forEach((p) => {
+      Promise.resolve(p)
+        .then((value) => {
+          if (!done && value) {
+            done = true;
+            resolve(value);
+          }
+        })
+        .finally(() => {
+          remaining--;
+          if (remaining === 0 && !done) resolve(null);
+        });
+    });
+  });
+}
+
 // Calls the AI expecting a non-empty JSON array back, retrying with fresh
 // generations on failure. "openrouter/free" routes each request to a
 // different free model of varying quality, so a retry usually lands on a
 // model that produces valid output even when the previous one didn't.
 // An optional `validate` callback rejects arrays that parse but don't have
 // the required shape, so bad output triggers a retry instead of a 500.
+//
+// `parallel` fires that many attempts at once per round instead of one at a
+// time, returning as soon as any of them succeeds. This trades extra free
+// API calls (never more than `attempts` total) for lower worst-case latency,
+// since a slow/bad generation no longer blocks the next attempt from
+// starting.
 async function callAIForArray(
   prompt,
-  { temperature = 0.3, maxTokens = 2000, attempts = 3, validate } = {},
+  { temperature = 0.3, maxTokens = 2000, attempts = 3, parallel = 1, validate } = {},
 ) {
-  for (let i = 1; i <= attempts; i++) {
+  let attemptNum = 0;
+
+  const tryOnce = async () => {
+    const n = ++attemptNum;
     try {
       const response = await callAI(prompt, temperature, maxTokens);
       const rawText = extractMessageText(response);
@@ -103,11 +136,20 @@ async function callAIForArray(
         return parsed;
       }
       console.warn(
-        `AI attempt ${i}/${attempts} produced unusable output (model: ${response.data?.model}, finish: ${response.data?.choices?.[0]?.finish_reason}, length: ${rawText.length})`,
+        `AI attempt ${n}/${attempts} produced unusable output (model: ${response.data?.model}, finish: ${response.data?.choices?.[0]?.finish_reason}, length: ${rawText.length})`,
       );
     } catch (err) {
-      console.warn(`AI attempt ${i}/${attempts} request failed: ${err.message}`);
+      console.warn(`AI attempt ${n}/${attempts} request failed: ${err.message}`);
     }
+    return null;
+  };
+
+  while (attemptNum < attempts) {
+    const batchSize = Math.min(parallel, attempts - attemptNum);
+    const result = await firstTruthy(
+      Array.from({ length: batchSize }, () => tryOnce()),
+    );
+    if (result) return result;
   }
   return null;
 }
@@ -241,7 +283,8 @@ export const generateMap = async (req, res, next) => {
     const nodes = await callAIForArray(buildKnowledgeMapPrompt(normalizedTopic), {
       temperature: 0.3,
       maxTokens: 4000,
-      attempts: 3,
+      attempts: 4,
+      parallel: 2,
       validate: isValidTree,
     });
 
@@ -289,11 +332,26 @@ export const generateMap = async (req, res, next) => {
 // ================= GET ALL =================
 export const getMaps = async (req, res, next) => {
   try {
-    const progress = await UserProgress.find({ user: req.user._id })
-      .populate("topicMap", "topic")
-      .sort({ updatedAt: -1 });
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(60, Math.max(1, parseInt(req.query.limit, 10) || 30));
+    const skip = (page - 1) * limit;
 
-    res.json({ progress });
+    const [progress, total] = await Promise.all([
+      UserProgress.find({ user: req.user._id })
+        .populate("topicMap", "topic")
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      UserProgress.countDocuments({ user: req.user._id }),
+    ]);
+
+    res.json({
+      progress,
+      page,
+      limit,
+      total,
+      hasMore: skip + progress.length < total,
+    });
   } catch (err) {
     next(err);
   }

@@ -5,7 +5,6 @@ import {
   useMemo,
   lazy,
   Suspense,
-  memo,
 } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { mapsAPI } from "../services/api";
@@ -13,14 +12,10 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { Spinner, ProgressBar } from "../components/ui";
 import { APP_CONFIG } from "../config/appConfig";
-import dagre from "dagre";
-import { Handle, Position } from "reactflow";
 
-const ReactFlow = lazy(() =>
-  import("reactflow").then((m) => ({ default: m.default })),
-);
-import "reactflow/dist/style.css";
-import { Background, Controls, MiniMap } from "reactflow";
+// dagre + reactflow are only needed for the Graph view — lazy-load the
+// whole thing so List/Tree-only sessions don't pay for that bundle weight.
+const MapGraphView = lazy(() => import("./MapGraphView"));
 
 const STATUSES = ["unknown", "partial", "known"];
 const NEXT_STATUS = { unknown: "partial", partial: "known", known: "unknown" };
@@ -60,119 +55,6 @@ const STATUS_COLORS = {
       "bg-slate-200 text-black border-slate-500 dark:bg-slate-600 dark:text-white dark:border-slate-400",
   },
 };
-const GRAPH_STATUS = {
-  known: {
-    bg: "linear-gradient(135deg, #022c22, #064e3b)",
-    border: "#10b981",
-    glow: "0 0 20px rgba(16,185,129,0.25)",
-    text: "#6ee7b7",
-  },
-  partial: {
-    bg: "linear-gradient(135deg, #3b2f05, #451a03)",
-    border: "#f59e0b",
-    glow: "0 0 20px rgba(245,158,11,0.2)",
-    text: "#fcd34d",
-  },
-  unknown: {
-    bg: "linear-gradient(135deg, #0f172a, #1e293b)",
-    border: "#475569",
-    glow: "0 0 12px rgba(0,0,0,0.4)",
-    text: "#94a3b8",
-  },
-};
-
-const ConceptNode = memo(({ data }) => {
-  const { label, description, status, onCycle } = data;
-  const s = GRAPH_STATUS[status] || GRAPH_STATUS.unknown;
-  return (
-    <div
-      onClick={onCycle}
-      className="cursor-pointer transition-all duration-200 hover:scale-105 group"
-      style={{
-        padding: "10px 16px",
-        borderRadius: 14,
-        minWidth: 160,
-        maxWidth: 220,
-        border: `2px solid ${s.border}`,
-        background: s.bg,
-        boxShadow: s.glow,
-      }}
-    >
-      <Handle
-        type="target"
-        position={Position.Top}
-        style={{ background: s.border, width: 6, height: 6, border: "none" }}
-      />
-      <div className="flex items-center gap-2 mb-0.5">
-        <span style={{ color: s.text, fontSize: 11, opacity: 0.8 }}>
-          {STATUS_ICON[status]}
-        </span>
-        <span
-          style={{
-            color: "#e2e8f0",
-            fontSize: 12,
-            fontWeight: 600,
-            fontFamily: "'Outfit', sans-serif",
-            lineHeight: 1.3,
-          }}
-        >
-          {label}
-        </span>
-      </div>
-      {description && (
-        <p
-          style={{
-            color: "#94a3b8",
-            fontSize: 10,
-            lineHeight: 1.4,
-            marginTop: 2,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {description}
-        </p>
-      )}
-      <div className="flex items-center gap-1.5 mt-1.5">
-        {STATUSES.map((st) => (
-          <span
-            key={st}
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 4,
-              background: status === st ? s.border : "rgba(100,116,139,0.3)",
-              transition: "all 0.2s",
-            }}
-          />
-        ))}
-        <span
-          style={{
-            marginLeft: "auto",
-            fontSize: 9,
-            color: s.text,
-            opacity: 0.6,
-            fontWeight: 500,
-            textTransform: "uppercase",
-            letterSpacing: 0.5,
-          }}
-        >
-          {status}
-        </span>
-      </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        style={{ background: s.border, width: 6, height: 6, border: "none" }}
-      />
-    </div>
-  );
-});
-ConceptNode.displayName = "ConceptNode";
-
-const NODE_TYPES = { concept: ConceptNode };
-
 function formatTimer(seconds) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -294,8 +176,10 @@ const MapView = () => {
   const [quizAnswers, setQuizAnswers] = useState({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizLoading, setQuizLoading] = useState(false);
+  const [quizCache, setQuizCache] = useState(null); // { key, questions, answers, submitted }
   const [pathData, setPathData] = useState(null);
   const [pathLoading, setPathLoading] = useState(false);
+  const [pathCache, setPathCache] = useState(null); // { key, path }
   const [editingNote, setEditingNote] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -413,26 +297,41 @@ const MapView = () => {
     setDeleteConfirm(false);
   };
 
-  const startQuiz = async () => {
+  // Reopening the quiz/path panel after closing it re-uses the last
+  // generation instead of burning another AI call, as long as the set of
+  // gaps hasn't changed. `force` (used by "Retake") always regenerates.
+  const startQuiz = async (force = false) => {
+    const gaps = nodes
+      .filter((n) => (progress?.nodeStatuses?.[n.id] || "unknown") !== "known")
+      .map((n) => n.label);
+    if (!gaps.length) {
+      toast("All mastered!", { type: "success" });
+      return;
+    }
+    const gapsKey = [...gaps].sort().join("|");
+
+    if (!force && quizCache?.key === gapsKey) {
+      setQuizData(quizCache.questions);
+      setQuizAnswers(quizCache.answers);
+      setQuizSubmitted(quizCache.submitted);
+      setActivePanel("quiz");
+      return;
+    }
+
     setActivePanel("quiz");
     setQuizData(null);
     setQuizAnswers({});
     setQuizSubmitted(false);
     setQuizLoading(true);
     try {
-      const gaps = nodes
-        .filter(
-          (n) => (progress?.nodeStatuses?.[n.id] || "unknown") !== "known",
-        )
-        .map((n) => n.label);
-      if (!gaps.length) {
-        toast("All mastered!", { type: "success" });
-        setActivePanel(null);
-        setQuizLoading(false);
-        return;
-      }
       const { data } = await mapsAPI.quiz(gaps, topicMap?.topic);
       setQuizData(data.questions);
+      setQuizCache({
+        key: gapsKey,
+        questions: data.questions,
+        answers: {},
+        submitted: false,
+      });
     } catch {
       toast("Failed to generate quiz", { type: "error" });
       setActivePanel(null);
@@ -440,6 +339,15 @@ const MapView = () => {
       setQuizLoading(false);
     }
   };
+
+  // Keep the cached quiz session in sync so in-progress answers survive
+  // closing and reopening the panel.
+  useEffect(() => {
+    if (!quizData) return;
+    setQuizCache((prev) =>
+      prev ? { ...prev, answers: quizAnswers, submitted: quizSubmitted } : prev,
+    );
+  }, [quizAnswers, quizSubmitted]);
 
   const submitQuiz = () => {
     setQuizSubmitted(true);
@@ -452,13 +360,26 @@ const MapView = () => {
     });
   };
 
-  const loadPath = async () => {
+  const loadPath = async (force = false) => {
+    const gapsKey = nodes
+      .filter((n) => (progress?.nodeStatuses?.[n.id] || "unknown") !== "known")
+      .map((n) => n.id)
+      .sort()
+      .join("|");
+
+    if (!force && pathCache?.key === gapsKey) {
+      setPathData(pathCache.path);
+      setActivePanel("path");
+      return;
+    }
+
     setActivePanel("path");
     setPathData(null);
     setPathLoading(true);
     try {
       const { data } = await mapsAPI.learningPath(id);
       setPathData(data.path);
+      setPathCache({ key: gapsKey, path: data.path });
       if (!data.path.length)
         toast(data.message || "All mastered!", { type: "success" });
     } catch {
@@ -660,7 +581,7 @@ const MapView = () => {
     return d;
   }, [nodes, progress]);
 
-  const buildTree = useCallback(() => {
+  const tree = useMemo(() => {
     const map = {};
     const roots = [];
     nodes.forEach((n) => {
@@ -805,61 +726,6 @@ const MapView = () => {
         );
       });
   };
-
-  const { graphNodes, graphEdges } = useMemo(() => {
-    if (!nodes.length || !progress) return { graphNodes: [], graphEdges: [] };
-    const g = new dagre.graphlib.Graph();
-    g.setDefaultEdgeLabel(() => ({}));
-    g.setGraph({ rankdir: "TB", nodesep: 80, ranksep: 100 });
-    nodes.forEach((node) => {
-      g.setNode(node.id, { width: 200, height: 70 });
-    });
-    nodes.forEach((node) => {
-      if (node.parentId) g.setEdge(node.parentId, node.id);
-    });
-    dagre.layout(g);
-
-    const gn = nodes.map((node) => {
-      const pos = g.node(node.id);
-      const status = progress.nodeStatuses?.[node.id] || "unknown";
-      return {
-        id: node.id,
-        type: "concept",
-        data: {
-          label: node.label,
-          description: node.description,
-          status,
-          onCycle: () => cycleStatus(node.id),
-        },
-        position: { x: pos.x - 100, y: pos.y - 35 },
-      };
-    });
-
-    const ge = nodes
-      .filter((n) => n.parentId)
-      .map((n) => {
-        const status = progress.nodeStatuses?.[n.id] || "unknown";
-        return {
-          id: `${n.parentId}-${n.id}`,
-          source: n.parentId,
-          target: n.id,
-          type: "smoothstep",
-          animated: status === "partial",
-          style: {
-            stroke:
-              status === "known"
-                ? "#10b981"
-                : status === "partial"
-                  ? "#f59e0b"
-                  : "#334155",
-            strokeWidth: status === "known" ? 2 : 1.5,
-            opacity: status === "unknown" ? 0.4 : 0.8,
-          },
-        };
-      });
-
-    return { graphNodes: gn, graphEdges: ge };
-  }, [nodes, progress, cycleStatus]);
 
   if (loading || !progress)
     return (
@@ -1097,14 +963,14 @@ const MapView = () => {
 
           <div className="flex gap-1.5 flex-wrap">
             <button
-              onClick={startQuiz}
+              onClick={() => startQuiz()}
               className="px-2.5 py-1 rounded-lg border text-xs transition-all duration-200 font-medium border-violet-500/30 text-violet-400 hover:bg-violet-500/10 hover:border-violet-400"
               title="Quiz yourself on gaps"
             >
               Quiz
             </button>
             <button
-              onClick={loadPath}
+              onClick={() => loadPath()}
               className="px-2.5 py-1 rounded-lg border text-xs transition-all duration-200 font-medium border-teal-500/30 text-teal-400 hover:bg-teal-500/10 hover:border-teal-400"
               title="Generate learning path"
             >
@@ -1316,7 +1182,7 @@ const MapView = () => {
                     ) : (
                       <div className="flex gap-2">
                         <button
-                          onClick={startQuiz}
+                          onClick={() => startQuiz(true)}
                           className="btn-primary text-sm"
                         >
                           Retake
@@ -2066,7 +1932,7 @@ const MapView = () => {
                 <span className="text-brand-400">{search}</span>"
               </p>
             )}
-            {renderTree(buildTree())}
+            {renderTree(tree)}
           </div>
         )}
 
@@ -2079,32 +1945,11 @@ const MapView = () => {
                 </div>
               }
             >
-              <ReactFlow
-                nodes={graphNodes}
-                edges={graphEdges}
-                nodeTypes={NODE_TYPES}
-                fitView
-                className="bg-[#020617]"
-                proOptions={{ hideAttribution: true }}
-                defaultEdgeOptions={{ type: "smoothstep" }}
-                minZoom={0.3}
-                maxZoom={2}
-              >
-                <Background color="#1e293b" gap={24} size={1} />
-                <Controls position="bottom-right" />
-                <MiniMap
-                  nodeColor={(n) => {
-                    const s = progress.nodeStatuses?.[n.id] || "unknown";
-                    return s === "known"
-                      ? "#10b981"
-                      : s === "partial"
-                        ? "#f59e0b"
-                        : "#334155";
-                  }}
-                  maskColor="rgba(0,0,0,0.7)"
-                  style={{ borderRadius: 12 }}
-                />
-              </ReactFlow>
+              <MapGraphView
+                nodes={nodes}
+                progress={progress}
+                cycleStatus={cycleStatus}
+              />
             </Suspense>
           </div>
         )}
